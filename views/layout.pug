@@ -1,7 +1,13 @@
 doctype html
-html
+
+html(lang="ja")
     head
+        meta(charset="UTF-8")
         title= title
-        link(rel='stylesheet', href='/stylesheets/style.css')
-    body
-        block content
+        link(rel='stylesheet', href='/bootstrap/css/bootstrap.min.css')
+    body.container
+        header
+            h1.display-4= title
+        main
+            block main
+        script(src="bootstrap/js/bootstrap.bundle.min.js")
