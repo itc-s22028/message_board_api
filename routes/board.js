@@ -1,12 +1,9 @@
-import express, { Request, Response } from "express";
-import { PrismaClient, User } from "@prisma/client";
-import {
-    PrismaClientKnownRequestError,
-    PrismaClientValidationError,
-} from "@prisma/client/runtime/library";
-
+import express from 'express';
 const router = express.Router();
-const {check, validationResult} = require("express-validator");
+
+import { PrismaClient } from "@prisma/client";
+const prisma = new PrismaClient();
+import { check, validationResult } from "express-validator";
 
 /** 1ページあたりの最大メッセージ数 */
 const pageSize = 5;
@@ -16,7 +13,7 @@ const pageSize = 5;
  */
 const loginCheck = (req, res, next) => {
     if (!req.user) {
-        req.session.returnTo = "/boards";
+        req.session.returnTo = "/board";
         res.redirect("/users/login");
         return;
     }
@@ -27,47 +24,56 @@ const loginCheck = (req, res, next) => {
  * メッセージ一覧ページ
  */
 router.get("/:page?", loginCheck, async (req, res, next) => {
-    // ページ番号をパラメータから取る。なければデフォルトは 1
-    const page = +req.params.page || 1;
-    // メッセージ取ってくる
-    const messages = await prisma.message.findMany({
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-        orderBy: [
-            {createdAt: "desc"}
-        ],
-        include: {
-            account: true
-        }
-    });
-    const data = {
-        title: "Board",
-        user: req.user,
-        content: messages,
-        page
-    };
-    return res.status(200).json({data});
+    try {
+        // ページ番号をパラメータから取る。なければデフォルトは 1
+        const page = +req.params.page || 1;
+
+        // メッセージ取ってくる
+        const messages = await prisma.message.findMany({
+            skip: (page - 1) * pageSize,
+            take: pageSize,
+            orderBy: [
+                { createdAt: "desc" }
+            ],
+            include: {
+                account: true
+            }
+        });
+
+        // JSON形式でクライアントに返す
+        res.status(200).json({ messages });
+    } catch (error) {
+        // エラーが発生した場合はエラーレスポンスを返す
+        res.status(500).json({ error: 'Error fetching messages' });
+    } finally {
+        await prisma.$disconnect();
+    }
 });
 
 /**
  * メッセージの新規登録
  */
-router.post("/add",
+router.post('/add',
     loginCheck,
-    check("message").notEmpty({ignore_whitespace: true}),
-    async function (req, res, next) {
+    check('message').notEmpty({ ignore_whitespace: true }),
+    async (req, res, next) => {
         const result = validationResult(req);
         if (result.isEmpty()) {
             // 入力値に問題がなければ登録処理。問題があれば何もしない。
+
+            // ログイン中のユーザー情報を取得
+            const currentUser = req.user;
+
+            // メッセージをデータベースに登録
             await prisma.message.create({
                 data: {
-                    accountId: req.user.id,
-                    text: req.body.message
-                }
+                    accountId: currentUser.id,
+                    text: req.body.message,
+                },
             });
         }
         // post(/boards/add)ではレスポンスは返さないのでリダイレクト
-        res.redirect("/boards/1");
+        res.redirect('/board/1');
     }
 );
 
@@ -95,13 +101,13 @@ router.get("/home/:uid/:page?", loginCheck, async (req, res, next) => {
         }
     });
     const data = {
-        title: "Boards",
+        title: "Board",
         user: req.user,
         target,
         content: messages,
         page,
     };
-    return res.status(200).json({data});
+    res.render("board/home", data);
 });
 
 export default router;

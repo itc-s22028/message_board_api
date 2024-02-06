@@ -2,78 +2,82 @@ import express from "express";
 import passport from "passport";
 import { PrismaClient } from "@prisma/client";
 import LocalStrategy from "passport-local";
-import { generateSalt, calcHash } from "../util/scrypt.js";
-import { timingSafeEqual } from "node:crypto";
 import { check, validationResult } from "express-validator";
-import * as scrypt from "../util/scrypt.js";
+import * as scrypt from "../util/auth.js";
 
 const router = express.Router();
 const prisma = new PrismaClient();
 
-
 passport.use(new LocalStrategy(
-    {usernameField: "name", passwordField: "password"},
-    async (username, password, cb) => {
+    async (username, password, done) => {
       try {
-        const user = await prisma.user.findUnique({
-          where: {name: username}
-        });
+        const user = await prisma.user.findUnique({ where: { name: username } });
+
         if (!user) {
-          // 指定されたユーザがデータベースにない場合
-          return cb(null, false, {message: "ユーザ名かパスワードが違います"});
+          return done(null, false, { message: 'ユーザーが見つかりません' });
         }
-        // あらためてリクエストに含まれるパスワードのハッシュ値を計算する
-        const hashedPassword = scrypt.calcHash(password, user.salt);
-        // 計算したハッシュ値と、データベースに保存されているハッシュ値の比較
-        if (!timingSafeEqual(user.password, hashedPassword)) {
-          // 2つのハッシュ値を比較して異なっていた場合(パスワードが間違っている)
-          return cb(null, false, {message: "ユーザ名かパスワードが違います"});
+
+        const hashedPassword = scrypt.calcHash(password, user.salt).toString('hex');
+        if (hashedPassword !== user.password) {
+          return done(null, false, { message: 'パスワードが一致しません' });
         }
-        // ユーザもパスワードも正しい場合
-        return cb(null, user);
-      } catch (e) {
-        return cb(e);
+
+        return done(null, user);
+      } catch (error) {
+        return done(error);
       }
     }
 ));
 
-// ユーザ情報をセッションに保存するルールの定義
 passport.serializeUser((user, done) => {
   process.nextTick(() => {
-    done(null, {id: user.id, name: user.name});
+    done(null, { id: user.id, name: user.name });
   });
 });
 
-// セッションからユーザ情報を復元するルールの定義
 passport.deserializeUser((user, done) => {
   process.nextTick(() => {
-    return done(null, user);
+    done(null, user);
   });
 });
 
-
-router.get("/login", function (req, res, next) {
+router.get("/login", (req, res, next) => {
   const data = {
     title: "Users/Login",
-    content: "名前とパスワードを入力ください"
+    content: "名前とパスワードを入力してください"
   };
-  return res.status(200).json({data});
+  if (req.isAuthenticated()) {
+    return res.status(200).json({ user: req.user });
+  } else {
+    return res.status(401).json({ message: "認証されていません", data });
+  }
 });
 
-
-/**
- * passport.js の関数を利用して認証処理をおこなう。
- */
 router.post("/login", passport.authenticate("local", {
-  successReturnToOrRedirect: "/",
-  failureRedirect: "/users/login",
+  // successReturnToOrRedirect: "/",
+  failureRedirect: "/users/error",
   failureMessage: true,
   keepSessionInfo: true
-}));
+}), (req, res, next) => {
+  try {
+    // ログイン成功後にユーザー情報を取得
+    const user = req.user;
 
-/**
- * ログアウト処理
- */
+    // ユーザー情報をボードに渡す処理（ここではユーザー名を取得していますが、必要に応じて変更してください）
+    const username = user.name;
+
+    // ボードへのリダイレクトまたはデータ渡し
+    res.redirect(`/board?username=${username}`);
+  } catch (error) {
+    console.error('ログイン成功後の処理エラー:', error);
+    res.redirect("/users/error");
+  }
+});
+
+router.get("/error", (req, res, next) => {
+  res.json({message: "name and/or password is invalid"})
+})
+
 router.get("/logout", (req, res, next) => {
   req.logout((err) => {
     if (err) {
@@ -83,27 +87,22 @@ router.get("/logout", (req, res, next) => {
   });
 });
 
-/**
- * 新規登録のフォームを表示するだけのページ
- */
 router.get("/signup", (req, res, next) => {
   const data = {
     title: "Users/Signup",
+    content: "新規登録",
     name: "",
+    password:hashedPasswordString,
   };
-  return res.status(200).json({data});
+  return res.status(200).json({ data });
 });
 
-/**
- * 新規登録をする処理
- */
 router.post("/signup", [
   check("name", "NAME は必ず入力してください。").notEmpty(),
   check("password", "PASSWORD は必ず入力してください。").notEmpty(),
 ], async (req, res, next) => {
   const result = validationResult(req);
 
-  // 入力値チェックで問題があれば登録処理はしないで再入力を求める
   if (!result.isEmpty()) {
     const messages = result.array();
     const data = {
@@ -111,24 +110,35 @@ router.post("/signup", [
       name: req.body.name,
       messages,
     };
-    return res.status(200).json({data: data});
+    return res.status(400).json({ data });
   }
-  // 入力値チェックに問題がなければデータ登録
-  const {name, password} = req.body;
+
+  const { name, password } = req.body;
   const salt = scrypt.generateSalt();
   const hashedPassword = scrypt.calcHash(password, salt);
   const hashedPasswordString = hashedPassword.toString('hex');
-  
-  await prisma.user.create({
-    data: {
-      name,
-      password: hashedPasswordString,
-      salt,
-    }
-  });
-  res.redirect("/users/login");
+
+  try {
+    const newUser = await prisma.user.create({
+      data: {
+        name,
+        password: hashedPasswordString,
+        salt,
+      }
+    });
+
+    req.login(newUser, (loginErr) => {
+      if (loginErr) {
+        console.error("ログインエラー:", loginErr);
+        return res.status(500).json({ message: "サインアップとログインに失敗しました" });
+      }
+
+      return res.status(200).json({ message: "サインアップとログインが成功しました" });
+    });
+  } catch (error) {
+    console.error("新規登録エラー:", error);
+    return res.status(500).json({ message: "サインアップに失敗しました" });
+  }
 });
-
-
 
 export default router;
