@@ -47,14 +47,14 @@ router.get("/login", (req, res, next) => {
     content: "名前とパスワードを入力してください"
   };
   if (req.isAuthenticated()) {
-    return res.status(200).json({ user: req.user });
+    return res.status(200).json({ user: req.user});
   } else {
-    return res.status(401).json({ message: "認証されていません", data });
+    return res.status(401).json({ message: "認証されていません", data});
   }
 });
 
 router.post("/login", passport.authenticate("local", {
-  // successReturnToOrRedirect: "/",
+  successReturnToOrRedirect: "/users/normally",
   failureRedirect: "/users/error",
   failureMessage: true,
   keepSessionInfo: true
@@ -63,10 +63,10 @@ router.post("/login", passport.authenticate("local", {
     // ログイン成功後にユーザー情報を取得
     const user = req.user;
 
-    // ユーザー情報をボードに渡す処理（ここではユーザー名を取得していますが、必要に応じて変更してください）
+    // ユーザー情報をボードに渡す処理
     const username = user.name;
 
-    // ボードへのリダイレクトまたはデータ渡し
+    // ボードへのリダイレクト
     res.redirect(`/board?username=${username}`);
   } catch (error) {
     console.error('ログイン成功後の処理エラー:', error);
@@ -74,8 +74,20 @@ router.post("/login", passport.authenticate("local", {
   }
 });
 
+router.get("/board", (req, res) => {
+  // リクエストからユーザー情報を取得
+  const username = req.query.username;
+
+  // ここで必要な処理を行う
+  res.render("board", { username });
+});
+
 router.get("/error", (req, res, next) => {
   res.json({message: "name and/or password is invalid"})
+})
+
+router.get("/normally", (req, res, next) => {
+  res.json({message: "OK"})
 })
 
 router.get("/logout", (req, res, next) => {
