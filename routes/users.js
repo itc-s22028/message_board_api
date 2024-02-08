@@ -41,15 +41,29 @@ passport.deserializeUser((user, done) => {
   });
 });
 
+const checkAuthentication = (req, res, next) => {
+  if (req.isAuthenticated()) {
+    return res.status(200).json({ message: "logged in" });
+  } else {
+    return res.status(401).json({ message: "unauthenticated" });
+  }
+};
+
+
+router.get("/", checkAuthentication, (req, res) => {
+  // 必要に応じて追加のロジックを記述
+  res.json({ message: "このルートにアクセスできます。" });
+});
+
 router.get("/login", (req, res, next) => {
   const data = {
     title: "Users/Login",
     content: "名前とパスワードを入力してください"
   };
   if (req.isAuthenticated()) {
-    return res.status(200).json({ user: req.user});
+    return res.status(200).json({ message: "OK" , user: req.user});
   } else {
-    return res.status(401).json({ message: "認証されていません", data});
+    return res.status(401).json({ message: "name and/or password is invalid"});
   }
 });
 
@@ -91,12 +105,9 @@ router.get("/normally", (req, res, next) => {
 })
 
 router.get("/logout", (req, res, next) => {
-  req.logout((err) => {
-    if (err) {
-      return next(err);
-    }
-    res.redirect("/users/login");
-  });
+  const LoginInfo = req.query.username
+
+  return res.status(200).json({LoginInfo});
 });
 
 router.get("/signup", (req, res, next) => {
@@ -104,7 +115,7 @@ router.get("/signup", (req, res, next) => {
     title: "Users/Signup",
     content: "新規登録",
     name: "",
-    password:hashedPasswordString,
+    password:"",
   };
   return res.status(200).json({ data });
 });
@@ -139,13 +150,14 @@ router.post("/signup", [
       }
     });
 
-    req.login(newUser, (loginErr) => {
+    req.login(newUser, async (loginErr) => {
       if (loginErr) {
         console.error("ログインエラー:", loginErr);
         return res.status(500).json({ message: "サインアップとログインに失敗しました" });
       }
 
-      return res.status(200).json({ message: "サインアップとログインが成功しました" });
+      // ログイン成功後の処理をここに移動
+      return res.status(201).json({ message: "created!" });
     });
   } catch (error) {
     console.error("新規登録エラー:", error);

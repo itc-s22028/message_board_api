@@ -57,25 +57,31 @@ router.post('/add',
     loginCheck,
     check('message').notEmpty({ ignore_whitespace: true }),
     async (req, res, next) => {
-        const result = validationResult(req);
-        if (result.isEmpty()) {
-            // 入力値に問題がなければ登録処理。問題があれば何もしない。
+        try {
+            const result = validationResult(req);
+            if (result.isEmpty()) {
+                // 入力値に問題がなければ登録処理。問題があれば何もしない。
 
-            // ログイン中のユーザー情報を取得
-            const currentUser = req.user;
+                // ログイン中のユーザー情報を取得
+                const currentUser = req.user;
 
-            // メッセージをデータベースに登録
-            await prisma.message.create({
-                data: {
-                    accountId: currentUser.id,
-                    text: req.body.message,
-                },
-            });
+                // メッセージをデータベースに登録
+                await prisma.message.create({
+                    data: {
+                        accountId: currentUser.id,
+                        text: req.body.message,
+                    },
+                });
+            }
+            // post(/boards/add)ではレスポンスは返さないのでリダイレクト
+            res.redirect('/board/1');
+        } catch (error) {
+            console.error('エラーが発生しました:', error);
+            res.redirect("/users/error");
         }
-        // post(/boards/add)ではレスポンスは返さないのでリダイレクト
-        res.redirect('/board/1');
     }
 );
+
 
 /**
  * 特定のユーザのみのメッセージ一覧を表示する
@@ -101,7 +107,7 @@ router.get("/home/:uid/:page?", loginCheck, async (req, res, next) => {
         }
     });
     const data = {
-        title: "Board",
+        title: "Boards",
         user: req.user,
         target,
         content: messages,
